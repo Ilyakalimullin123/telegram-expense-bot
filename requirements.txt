@@ -1,9 +1,9 @@
 openai
 gspread
-google-auth
-python-telegram-bot
+oauth2client
+python-dotenv
 matplotlib
 pandas
-python-dotenv
-oauth2client
-
+telegram
+nest_asyncio
+pdfkit
