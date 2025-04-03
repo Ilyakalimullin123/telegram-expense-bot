@@ -5,4 +5,5 @@ python-telegram-bot
 matplotlib
 pandas
 python-dotenv
+oauth2client
 
