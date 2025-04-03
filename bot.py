@@ -16,10 +16,15 @@ from telegram import Update, BotCommand, InputFile, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
 from telegram.constants import ParseMode
 
-
 # Загрузка переменных окружения из tokens.env
 dotenv_path = Path('.') / 'tokens.env'
 load_dotenv(dotenv_path)
+
+# Создание файла credentials.json из переменной окружения
+GOOGLE_CREDS_JSON = os.getenv("GOOGLE_CREDS_JSON")
+if GOOGLE_CREDS_JSON:
+    with open("credentials.json", "w") as f:
+        f.write(GOOGLE_CREDS_JSON)
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
