@@ -12,9 +12,10 @@ import re
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from telegram import Update, BotCommand, InputFile, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
-from telegram import BotCommand, InputFile
 from telegram.constants import ParseMode
+
 
 # Загрузка переменных окружения из tokens.env
 dotenv_path = Path('.') / 'tokens.env'
@@ -106,8 +107,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await send_chart(update)
     if text.lower() == "экспорт":
         return await export_excel(update)
-    if text.lower() == "pdf":
-        return await export_pdf(update)
     add_to_sheet(text)
     await update.message.reply_text("📜 Сообщение записано!")
 
@@ -129,7 +128,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("🚀 Бот получил команду /start")
-    keyboard = [["Итого за сегодня", "График"], ["Экспорт", "PDF"]]
+    keyboard = [["Итого за сегодня", "График"], ["Экспорт"]]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     await update.message.reply_text(
         "Привет! Я готов записывать твои расходы. Просто отправь сообщение с суммой и категорией.",
@@ -190,19 +189,6 @@ async def export_excel(update: Update):
     with open(filename, 'rb') as f:
         await update.message.reply_document(document=InputFile(f, filename))
 
-async def export_pdf(update: Update):
-    values = sheet.get_all_values()
-    df = pd.DataFrame(values)
-    filename = f"export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-    df.to_csv("temp.csv", index=False, header=False)
-    try:
-        import pdfkit
-        pdfkit.from_file("temp.csv", filename)
-    except:
-        df.to_string(buf=open(filename, 'w'))
-    with open(filename, 'rb') as f:
-        await update.message.reply_document(document=InputFile(f, filename))
-
 async def send_daily_report(app):
     now = datetime.now()
     today = now.strftime("%Y-%m-%d")
@@ -240,15 +226,13 @@ async def main():
         BotCommand("start", "Приветствие и инструкция"),
         BotCommand("total", "Показать сумму расходов за сегодня"),
         BotCommand("chart", "График расходов по дням"),
-        BotCommand("export", "Экспорт в Excel"),
-        BotCommand("pdf", "Экспорт в PDF")
+        BotCommand("export", "Экспорт в Excel")
     ])
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("total", total_today))
     app.add_handler(CommandHandler("chart", send_chart))
     app.add_handler(CommandHandler("export", export_excel))
-    app.add_handler(CommandHandler("pdf", export_pdf))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.ALL, debug_all_messages))
