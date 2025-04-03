@@ -12,8 +12,8 @@ import re
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from telegram import Update, ReplyKeyboardMarkup, BotCommand, InputFile
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
+from telegram import BotCommand, InputFile
 from telegram.constants import ParseMode
 
 # Загрузка переменных окружения из tokens.env
