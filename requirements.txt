@@ -1,9 +1,9 @@
+python-dotenv
 openai
 gspread
 oauth2client
-python-dotenv
+nest-asyncio
 matplotlib
 pandas
-telegram
-nest_asyncio
-pdfkit
+python-telegram-bot
+openpyxl
