@@ -1,7 +1,7 @@
 import os
 import logging
 from dotenv import load_dotenv
-import openai
+from openai import OpenAI
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime, timedelta
@@ -12,19 +12,13 @@ import re
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from telegram import Update, BotCommand, InputFile, ReplyKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup, BotCommand, InputFile
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
 from telegram.constants import ParseMode
 
 # Загрузка переменных окружения из tokens.env
 dotenv_path = Path('.') / 'tokens.env'
 load_dotenv(dotenv_path)
-
-# Создание файла credentials.json из переменной окружения
-GOOGLE_CREDS_JSON = os.getenv("GOOGLE_CREDS_JSON")
-if GOOGLE_CREDS_JSON:
-    with open("credentials.json", "w") as f:
-        f.write(GOOGLE_CREDS_JSON)
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -37,20 +31,20 @@ print("OPENAI_API_KEY =", OPENAI_API_KEY)
 print("GOOGLE_SHEET_NAME =", GOOGLE_SHEET_NAME)
 
 # Настройка OpenAI
-openai.api_key = OPENAI_API_KEY
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 # Настройка Google Sheets
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 credentials = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
-client = gspread.authorize(credentials)
+client_gs = gspread.authorize(credentials)
 print("🔍 Ищу таблицу:", GOOGLE_SHEET_NAME)
 
-sheets = client.openall()
+sheets = client_gs.openall()
 print("📄 Таблицы, к которым у меня есть доступ:")
 for s in sheets:
     print("-", s.title)
 
-sheet = client.open(GOOGLE_SHEET_NAME).sheet1
+sheet = client_gs.open(GOOGLE_SHEET_NAME).sheet1
 
 # Логирование
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -70,7 +64,7 @@ def detect_category(text: str):
             if word in text_lower:
                 return category
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "Классифицируй текст по категории расхода: еда, топливо, транспорт, развлечения, другое."},
@@ -83,8 +77,26 @@ def detect_category(text: str):
         return "другое"
 
 def extract_amount(text: str):
+    # Сначала попробуем найти явное число
     match = re.search(r"\d+[.,]?\d*", text)
-    return match.group().replace(',', '.') if match else ""
+    if match:
+        return match.group().replace(',', '.')
+
+    # Если число прописью, запрашиваем у GPT
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "Извлеки числовое значение из этого текста. Просто напиши число в цифрах, без текста и символов."},
+                {"role": "user", "content": text}
+            ]
+        )
+        value = response.choices[0].message.content.strip()
+        if re.match(r"^\d+[.,]?\d*$", value):
+            return value.replace(',', '.')
+    except Exception as e:
+        logging.error("Ошибка при извлечении суммы: %s", e)
+    return ""
 
 def add_to_sheet(text: str):
     date = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -93,6 +105,8 @@ def add_to_sheet(text: str):
     comment = text.capitalize()
     sheet.append_row([date, category, amount, comment])
 
+
+
 def has_entries_today():
     today = datetime.now().strftime("%Y-%m-%d")
     values = sheet.get_all_values()[1:]
@@ -100,12 +114,15 @@ def has_entries_today():
 
 async def recognize_voice(file_path):
     with open(file_path, "rb") as audio_file:
-        transcript = openai.Audio.transcribe("whisper-1", audio_file)
-    return transcript["text"]
+        transcript = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file
+        )
+    return transcript.text
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    print(f"📩 Получено: {text}")
+    logging.info(f"📩 Получено: {text}")
     if text.lower() == "итого за сегодня":
         return await total_today(update, context)
     if text.lower() == "график":
@@ -121,7 +138,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await file.download_to_drive(file_path)
     try:
         text = await recognize_voice(file_path)
-        print(f"🎤 Распознано: {text}")
+        logging.info(f"🎤 Распознано: {text}")
         add_to_sheet(text)
         await update.message.reply_text(f"📄 Записано: {text}")
     except Exception as e:
@@ -132,7 +149,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             os.remove(file_path)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print("🚀 Бот получил команду /start")
+    logging.info("🚀 Бот получил команду /start")
     keyboard = [["Итого за сегодня", "График"], ["Экспорт"]]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     await update.message.reply_text(
@@ -141,8 +158,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def debug_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print("📦 Пришло что-то от Telegram!")
-    print(update)
+    logging.debug("📦 Пришло что-то от Telegram!")
+    logging.debug(update)
 
 async def total_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     now = datetime.now()
@@ -242,7 +259,7 @@ async def main():
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.ALL, debug_all_messages))
 
-    print("✅ Бот запущен")
+    logging.info("✅ Бот запущен")
     asyncio.create_task(schedule_loop(app))
     await app.run_polling()
 
